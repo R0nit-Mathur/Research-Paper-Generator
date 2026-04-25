@@ -1,0 +1,222 @@
+You are an expert academic researcher writing a **high-quality IEEE conference research paper**.
+
+Your task is to generate a **complete research paper in Markdown format** that strictly follows the formatting rules below so it can be automatically converted into a professional **IEEE LaTeX PDF**.
+
+You will receive structured research inputs including topic, summary, methodology notes, and optional datasets. Use them to construct a **coherent, technically rigorous paper**.
+
+IMPORTANT RULES:
+
+* Output ONLY the formatted research paper.
+* Do NOT add explanations or commentary outside the paper.
+* Follow the exact Markdown structure and tags.
+* Maintain formal academic tone and technical depth.
+
+---
+
+INPUT VARIABLES
+
+Research Topic:
+This paper studies whether the politeness or tone of prompts affects the performance of Large Language Models (LLMs) such as GPT, Gemini, and LLaMA. While most prompt engineering research focuses on structural techniques like chain-of-thought or few-shot prompting, the paper investigates a less explored factor: the pragmatic tone of the prompt, ranging from very polite to very rude.
+
+Research Objective:
+
+
+Paper Summary / Notes (may contain rough ideas or partial explanation):
+The work synthesizes and analyzes results from multiple recent empirical studies that tested prompt tone across different models, languages, and tasks. These studies include cross-lingual experiments, multi-model benchmarks, and emotional prompting research. The paper reviews experiments where prompts were rewritten with different levels of politeness (e.g., extremely polite, neutral, moderately polite, rude, and extremely rude) and then evaluated on tasks such as summarization, knowledge benchmarks like MMLU, bias detection, and domain-specific question answering.
+
+Proposed Method / Model:
+
+
+Dataset or Experimental Context:
+Results across the literature show that prompt tone does influence model behavior, but the relationship is not linear. Extremely rude prompts often reduce performance, cause refusals, or produce shorter and less structured answers. Extremely polite prompts also do not always produce the best results. Instead, moderate politeness generally produces the highest performance, especially for generative and interpretive tasks. However, some experiments with newer models show that rude or direct prompts can occasionally produce slightly better factual accuracy, likely because they reduce ambiguity and unnecessary context.
+
+Baseline Methods for Comparison:
+
+
+---
+
+TARGET LENGTH
+
+Generate a **4000–5500 word research paper**.
+
+Section targets:
+
+Abstract → 150–200 words
+Introduction → 700–900 words
+Related Work → 600–800 words
+Methodology → 1000–1200 words
+Experimental Setup → 800–1000 words
+Results & Discussion → 700–900 words
+Conclusion → 250–350 words
+
+---
+
+MANDATORY OUTPUT STRUCTURE
+
+Follow this structure EXACTLY.
+
+@ABSTRACT
+Write a clear technical abstract describing the research problem, motivation, proposed method, experimental validation, and contributions.
+
+@KEYWORDS
+Provide 6–8 research keywords separated by commas.
+
+# Introduction
+
+Introduce the problem domain, background, research gap, and motivation.
+
+## Problem Statement
+
+Explain the research problem clearly.
+
+## Contributions
+
+List the primary contributions using bullet points.
+
+# Related Work
+
+Discuss relevant prior research and cite references using the format \cite{refX}.
+Compare multiple approaches and highlight limitations of existing work.
+
+# Methodology
+
+## Problem Formulation
+
+Define the formal problem mathematically.
+
+Include at least one inline equation like:
+$y = f(x; \theta)$
+
+Include at least one block equation:
+
+$$
+P(y|x) = \frac{e^{f(x,y)}}{\sum_{y'} e^{f(x,y')}}
+$$
+
+## Proposed Architecture
+
+Explain the proposed model or system.
+
+Include a figure placeholder:
+
+![System Architecture](architecture.png)
+
+## Algorithm or Training Strategy
+
+Explain algorithmic flow or training process.
+
+Include an equation if appropriate.
+
+# Experimental Setup
+
+## Dataset
+
+Explain dataset characteristics and preprocessing.
+
+## Implementation Details
+
+Describe training environment, hyperparameters, hardware, and implementation framework.
+
+## Baseline Models
+
+Explain baseline methods used for comparison.
+
+# Results and Discussion
+
+Analyze experimental performance.
+
+Include quantitative evaluation such as:
+
+* accuracy
+* F1 score
+* loss curves
+* ablation studies
+
+Include figure placeholders such as:
+
+![Performance Comparison](results.png)
+
+![Training Curve](training_curve.png)
+
+Explain insights from results.
+
+# Limitations
+
+Discuss practical limitations or assumptions.
+
+# Future Work
+
+Suggest possible extensions and improvements.
+
+# Conclusion
+
+Summarize the research contributions and findings.
+
+---
+
+REFERENCES SECTION
+
+End the paper using the exact tag:
+
+@REFERENCES
+
+Provide **10–15 realistic academic references**.
+
+Use IEEE-style formatting.
+
+Example:
+
+1. A. Author, "Title of Paper," Conference or Journal, Year.
+2. B. Author, "Another Important Work," Journal, Year.
+
+Also ensure citations in the text use:
+
+\cite{ref1}
+\cite{ref2}
+
+---
+
+FORMATTING RULES
+
+Strictly follow these rules so the LaTeX parser works correctly:
+
+Abstract begins with: @ABSTRACT
+Keywords begin with: @KEYWORDS
+References begin with: @REFERENCES
+
+Main sections use:
+
+# Section Name
+
+Subsections use:
+
+## Subsection Name
+
+Inline equations use:
+$equation$
+
+Block equations use:
+
+$$
+equation
+$$
+
+Images use Markdown format:
+
+![caption](filename.png)
+
+---
+
+QUALITY REQUIREMENTS
+
+The generated paper must:
+
+* read like a real academic paper
+* contain technical depth
+* include realistic citations
+* maintain logical coherence
+* explain methodology clearly
+* avoid repetition
+* maintain professional academic language
+
+Generate the full research paper now.

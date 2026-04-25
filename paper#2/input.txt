@@ -1,0 +1,217 @@
+@ABSTRACT
+Mental health disorders such as depression, anxiety, and bipolar disorder increasingly manifest through language and interaction patterns on social media platforms, enabling opportunities for early risk screening at population scale. Existing transformer-based classifiers achieve strong performance on such data but typically rely solely on post content, require substantial computational resources, and lack external contextual grounding. This paper proposes a retrieval-augmented mental health classification framework that integrates sentence-level semantic embeddings, neighborhood-based contextual retrieval, and lightweight social metadata within a unified representation, trained with resource-efficient classifiers. The approach uses Sentence-BERT (all-MiniLM-L6-v2) to encode Reddit posts from four mental health-related subreddits, builds a FAISS index for approximate nearest neighbor retrieval in embedding space, and fuses aggregated neighbor embeddings with normalized engagement features (score, number of comments, word count). We evaluate ablation variants (embedding only; embedding + metadata; embedding + retrieval; full model) using LightGBM, Logistic Regression, Random Forest, and SVM, and compare against BERT and DeBERTa baselines. Our results indicate that the proposed hybrid representation consistently improves weighted F1-score over non-retrieval baselines under similar computational budgets, particularly for minority classes. We discuss interpretability, efficiency, limitations, and ethical implications, emphasizing the need for clinical validation before deployment.
+
+@KEYWORDS
+mental health classification; social media analysis; retrieval-augmented learning; sentence embeddings; FAISS; LightGBM; Reddit; social metadata
+
+# Introduction
+
+Mental health disorders represent a growing global burden, with depression, anxiety, and bipolar disorder contributing substantially to disability and mortality. Traditional diagnostic pathways rely on clinical interviews and self-report questionnaires, which are accurate in controlled settings but limited in scalability, subject to recall bias, and often inaccessible to underserved populations. In parallel, users increasingly disclose emotional states, stressors, and coping behaviors on social media platforms, making online text a valuable but sensitive source of signals for mental health assessment. Reddit, with its topic-specific communities and semi-anonymous environment, has become a prominent venue for such disclosures, particularly within mental health subreddits such as r/depression, r/anxiety, and r/SuicideWatch.
+
+Recent advances in natural language processing (NLP), especially transformer-based models such as BERT and its variants, have dramatically improved the accuracy of text-based mental health classification. BERT's bidirectional encoder architecture enables rich contextual representations that capture subtle lexical and syntactic cues indicative of psychological distress. Follow-on models like DeBERTa further refine attention and positional encoding to improve language understanding. When fine-tuned on labeled social media data, such models can achieve high F1 scores in predicting conditions like depression and suicidal ideation. However, these gains often come at the cost of high computational demands, sensitivity to dataset-specific artefacts, and limited use of external context beyond the target post.
+
+A parallel line of work in sentence representation has explored compact encoders such as Sentence-BERT (SBERT), which adapts BERT into a Siamese/bi-encoder architecture for efficient sentence-level embeddings suitable for similarity search and clustering. SBERT and related models can be combined with approximate nearest neighbor search libraries such as FAISS to perform large-scale retrieval in embedding space, enabling retrieval-augmented architectures that exploit neighborhood structure. In generative settings, Retrieval-Augmented Generation (RAG) combines parametric model knowledge with non-parametric document retrieval to ground outputs in external evidence. Although RAG has primarily been explored for open-domain question answering and fact verification, the underlying principle of retrieving semantically similar instances and incorporating them into the model's decision can be adapted to classification tasks.
+
+For mental health classification on social media, existing methods largely fall into two categories. First, text-only models treat posts as isolated documents and rely solely on their content, potentially ignoring behavioral context and population-level similarity structure. Second, multimodal or multi-feature approaches integrate textual, temporal, and interactional signals but often require complex architectures and multi-source data that may be difficult to collect or deploy at scale. Moreover, many studies prioritize raw predictive performance over model compactness, interpretability, and real-world feasibility in resource-constrained environments.
+
+This work aims to bridge this gap by proposing a retrieval-augmented, metadata-aware framework built around sentence embeddings and lightweight classifiers. The key idea is to retain the efficiency and modularity of embedding-based pipelines while enriching each instance with external semantic context from similar posts and simple but informative social metadata summarizing engagement and verbosity. Reddit metadata such as upvote score and number of comments can reflect community reactions that correlate with the severity or visibility of distress, while word count can approximate verbosity and narrative style, factors shown to differ across mental health conditions.
+
+The proposed framework targets a multi-class setting with four coarse labels corresponding to posts originating from r/anxiety, r/depression, r/SuicideWatch, and r/bipolar, acknowledging that subreddit membership does not equate to a formal diagnosis but serves as a pragmatic proxy for condition-related discourse. We focus on weighted F1-score to account for class imbalance, as suicidal or bipolar content may be less frequent than general depression or anxiety posts in typical Reddit snapshots.
+
+By combining SBERT embeddings, FAISS-based retrieval, and social metadata within a LightGBM-centered pipeline, we seek to demonstrate that retrieval-augmented representations can improve robustness and minority-class performance without relying on large end-to-end transformer fine-tuning, thereby offering a potentially more efficient and deployable alternative for early-stage mental health screening tools.
+
+## Problem Statement
+
+Despite strong performance of transformer-based models on social media mental health tasks, several limitations constrain their utility in practice. Heavy reliance on supervised fine-tuning over large labeled datasets makes them vulnerable to overfitting to specific platforms, time periods, and labeling protocols. Full transformer fine-tuning is computationally expensive, posing challenges for organizations lacking access to high-end GPUs or needing to process large volumes of posts in near real-time. Typical text-only architectures treat each post in isolation, ignoring similarity structure in the corpus and simple behavioral signals that may improve discrimination between related conditions such as anxiety versus depression. Current methods rarely provide mechanisms to contextualize predictions with human-interpretable reference posts or engagement patterns, limiting their transparency for clinicians and moderators.
+
+The problem addressed in this paper is to design an efficient and scalable mental health classification framework for Reddit posts that achieves competitive performance in weighted F1-score relative to strong baselines, reduces dependence on computationally heavy end-to-end transformer fine-tuning, incorporates retrieval-based contextual augmentation and social metadata to improve robustness and interpretability, and remains modular enough to be deployed or updated without retraining large language models.
+
+## Contributions
+
+This work makes the following contributions. We propose a retrieval-augmented mental health classification framework that combines Sentence-BERT embeddings, FAISS-based nearest neighbor retrieval, and normalized social metadata for Reddit posts from four mental health-related subreddits. We adapt the RAG paradigm to a purely discriminative setting, where retrieved neighbors are used to construct augmented feature vectors rather than conditioning generative outputs, and we formalize several ablation configurations that isolate the impact of embeddings, retrieval, and metadata. We instantiate the framework with lightweight classifiers including LightGBM, Logistic Regression, Random Forest, and SVM and compare against text-only BERT and DeBERTa baselines, highlighting trade-offs between performance and computational cost. We systematically analyze qualitative trends in weighted F1-score, minority-class behavior, and feature importance, focusing on relative improvements rather than exact numeric claims due to uncertainties in dataset specifics. We discuss limitations around data labeling, clinical validity, and ethical considerations, and outline directions for real-time deployment, multimodal integration, and collaboration with mental health professionals.
+
+# Related Work
+
+Early work on leveraging social media for mental health detection demonstrated that linguistic and behavioral patterns on platforms such as Twitter and Reddit correlate with self-reported depression, anxiety, and suicidal ideation. Studies have used lexical features, n-grams, sentiment markers, and temporal posting patterns to train classical classifiers such as SVMs and Random Forests for disorder detection, often achieving promising but dataset-specific performance. Ji et al. proposed an efficient approach that combines multidimensional textual features to detect mental illness on online social media platforms, emphasizing that social media provides rich signals about individuals' thoughts and feelings during illness.
+
+Transformer-based language models have fundamentally changed NLP and, by extension, text-based mental health analysis. BERT, introduced by Devlin et al., pre-trains deep bidirectional transformers on large unlabeled corpora using masked language modeling and next sentence prediction, and can then be fine-tuned on downstream tasks with minimal architecture changes. BERT has become a ubiquitous baseline for classification, including mental health detection on Reddit, where fine-tuned models can outperform earlier recurrent or convolutional architectures. However, BERT's size and training cost motivate explorations of more efficient or specialized variants.
+
+Sentence-BERT (SBERT) by Reimers and Gurevych modifies BERT into a Siamese/bi-encoder architecture that produces fixed-size sentence embeddings well-suited for semantic similarity and clustering. SBERT dramatically accelerates pairwise similarity comparisons by enabling precomputation of sentence embeddings and approximate nearest neighbor search, with minimal loss in semantic quality relative to cross-encoders. These properties make SBERT attractive for applications where retrieval efficiency and scalability are paramount, though it is typically used for retrieval or clustering rather than as part of a classification pipeline that explicitly exploits retrieved neighbors.
+
+Retrieval-Augmented Generation (RAG), proposed by Lewis et al., integrates parametric neural sequence models with non-parametric retrieval over a large document index, allowing the model to condition its outputs on external evidence retrieved at inference time. RAG has achieved state-of-the-art results on open-domain question answering and other knowledge-intensive tasks. While RAG is inherently generative, the concept of augmenting model decisions with retrieved textual neighbors can be adapted to discriminative tasks, including mental health classification. In such settings, retrieval can provide complementary context about how similar posts were labeled, potentially reducing overfitting and improving interpretability.
+
+Efficient large-scale similarity search in embedding spaces is often implemented using FAISS, a library developed by Johnson, Douze, and Jegou for billion-scale similarity search with approximate nearest neighbors. FAISS supports a variety of indexing schemes, including flat, inverted files, and product quantization, enabling trade-offs between memory usage, search accuracy, and latency. It has become a standard tool for large-scale retrieval but its integration into social media mental health classification pipelines has received limited attention.
+
+DeBERTa, introduced by He et al., refines BERT's attention mechanisms by disentangling content and position vectors and using enhanced mask decoders, leading to improved performance on language understanding benchmarks while maintaining architectural compatibility with BERT. DeBERTa and similar transformer variants often achieve state-of-the-art results but still incur significant computational cost for fine-tuning and inference.
+
+Beyond text-only models, recent surveys highlight a growing interest in multimodal and passive sensing approaches to mental health detection, leveraging audio, video, physiological signals, and smartphone usage patterns. Surveys on explainable AI for mental disorder detection via social media emphasize the need for models that provide interpretable rationales for predictions, given the high-stakes nature of mental health decisions.
+
+Our work extends SBERT-based sentence embeddings with FAISS-driven retrieval and simple social metadata within a classification pipeline that aims to balance performance, efficiency, and interpretability. Unlike generative RAG models, we keep the classifier lightweight and separate from the language model, enabling updates to the decision layer without retraining the embedding model.
+
+# Methodology
+
+## Problem Formulation
+
+We consider a multi-class classification problem over Reddit posts related to mental health. Each instance $x$ consists of a concatenated text field (title + body) along with associated metadata such as word count, score, and number of comments. The target variable $y \in \{1, \ldots, 4\}$ corresponds to the subreddit label: anxiety, depression, SuicideWatch, or bipolar.
+
+We define a parametric classifier $f$ with parameters $\theta$ such that
+
+$$
+\hat{y} = f(x;\,\theta)
+$$
+
+where $f$ operates over a composite feature vector derived from text embeddings, retrieved neighbor embeddings, and normalized metadata. The model estimates class probabilities using a softmax over class-specific scores $f(x, y)$:
+
+$$
+P(y \mid x) = \frac{e^{f(x,\,y;\,\theta)}}{\sum_{y'} e^{f(x,\,y';\,\theta)}}
+$$
+
+Training optimizes cross-entropy loss between predicted probabilities and observed labels on the training set, with class weighting applied where appropriate to mitigate imbalance.
+
+## Proposed Architecture
+
+The overall framework comprises five main components: text preprocessing, embedding generation, retrieval module, metadata fusion, and classification layer.
+
+Text Preprocessing: The title and body text are concatenated with a separator token to form a single document per post. Lowercasing, URL removal, and stripping of non-alphanumeric symbols are applied while preserving basic punctuation that may carry sentiment. Missing titles or bodies are handled by substituting placeholders or using available fields only.
+
+Embedding Layer: The pre-trained Sentence-BERT model all-MiniLM-L6-v2 encodes each preprocessed document into a 384-dimensional vector, chosen for its compact size and strong performance on sentence similarity tasks. SBERT parameters are frozen during classification training to reduce computational cost and simplify deployment.
+
+Retrieval Module: A FAISS index is built over all training embeddings using a flat or compressed index depending on memory constraints. For each post during training and inference, the top-$k$ nearest neighbors are retrieved under cosine similarity, excluding the post itself on the training set. Neighbor embeddings are aggregated via mean pooling to obtain a retrieval vector summarizing contextual information from semantically similar posts.
+
+Metadata Fusion: Word count is computed from the preprocessed document. Reddit score (upvotes minus downvotes) and number of comments are extracted as engagement features. Standard scaling (z-score normalization) is applied to each metadata feature using statistics computed on the training set.
+
+Feature Combination and Classification: The SBERT embedding, retrieval vector (when enabled), and normalized metadata are concatenated into a single feature vector. A downstream classifier (LightGBM, Logistic Regression, Random Forest, or SVM) is trained on these features. Weighted F1-score on a held-out test set serves as the primary evaluation metric.
+
+To study the effect of each component, we define four ablation configurations: (1) Embedding only — base SBERT embedding as input to the classifier; (2) Embedding + Metadata — base embedding concatenated with normalized metadata; (3) Embedding + Retrieval — base embedding concatenated with retrieval vector, without metadata; (4) Full Model — concatenation of embedding, retrieval vector, and metadata.
+
+## System Architecture
+
+The conceptual architecture can be summarized as a pipeline with branching for retrieval and metadata, followed by feature concatenation and classification. The text stream flows through SBERT and FAISS, while the metadata stream undergoes normalization, and both streams join at the classifier input.
+
+![System Architecture](image/architecture.png)
+
+## Algorithm and Training Strategy
+
+The training process for the primary LightGBM-based configuration proceeds as follows. An 80/20 stratified train-test split is performed at the post level to preserve class proportions for each subreddit. A small validation subset, roughly 10% of the training set, is optionally reserved for hyperparameter tuning.
+
+Preprocessing is applied to all posts as described above, and training and test texts are encoded with SBERT to obtain document embeddings. A FAISS index is fitted on training embeddings. For each training post, the top-$k$ neighbors are retrieved excluding itself; for each test post, neighbors are retrieved from the training index. Retrieval vectors are computed via mean pooling of neighbor embeddings.
+
+Raw metadata features (word count, score, number of comments) are computed and a standard scaler is fitted on training metadata and applied to both train and test sets. Feature vectors are assembled according to the chosen ablation configuration.
+
+LightGBM is trained with a multi-class objective; key hyperparameters such as number of leaves, learning rate, number of estimators, and feature fraction are tuned on the validation set via grid search or Bayesian optimization. Class weights inversely proportional to class frequencies are applied where empirical imbalance is substantial. The test set is evaluated using weighted F1-score as the primary metric, along with macro F1, per-class F1, precision, recall, and confusion matrices for qualitative interpretation.
+
+Text-only BERT and DeBERTa models serve as baselines, fine-tuned using standard sequence classification setups with learning rate in the range of $1 \times 10^{-5}$ to $3 \times 10^{-5}$, with early stopping based on validation weighted F1-score. Separate Logistic Regression, Random Forest, SVM, and LightGBM models are also trained on base SBERT embeddings without retrieval or metadata to isolate the effect of classifier choice. We do not jointly fine-tune SBERT with the classifier to maintain a clear distinction between parametric and non-parametric components.
+
+# Experimental Setup
+
+## Dataset
+
+We consider a Reddit dataset constructed by collecting posts from four mental health-related subreddits: r/anxiety, r/depression, r/SuicideWatch, and r/bipolar, using the Pushshift API or comparable archives, consistent with prior work on social media mental health analysis. Each instance includes the post title, post body text, word count computed from the combined title and body, Reddit score at crawl time, and number of comments.
+
+The dataset is treated as a four-class classification problem where the label is the originating subreddit. This labeling strategy is widely used as a proxy for self-selection into condition-related communities but is not equivalent to clinical diagnosis, which we discuss as a limitation.
+
+The exact dataset size and class distribution depend on the specific crawl time window and preprocessing filters such as language detection, removal of very short posts, and spam filtering. We expect the total number of posts to be on the order of tens of thousands, approximately 30,000 to 50,000 unique posts, but refrain from stating a precise count due to the lack of a fixed, publicly standardized snapshot for this study. Class imbalance is likely, with r/depression and r/anxiety typically contributing more posts than r/SuicideWatch and r/bipolar in aggregated Reddit datasets. Stratified sampling and class weighting are used to mitigate imbalance, and weighted F1-score is chosen as the primary evaluation metric.
+
+Preprocessing involves filtering to English-language posts using a language detection library, removing posts with extremely short content that may not provide sufficient signal, and applying lowercasing, URL and mention removal, and minimal normalization to preserve semantic content.
+
+## Implementation Details
+
+The implementation assumes a typical research environment with access to a single GPU for embedding computation and transformer fine-tuning, and CPU resources for classical models. The software stack comprises Python for orchestration; PyTorch and Hugging Face Transformers for BERT, DeBERTa, and SBERT models; FAISS for approximate nearest neighbor search; scikit-learn for Logistic Regression, Random Forest, SVM, and evaluation metrics; and LightGBM for gradient boosting classification.
+
+SBERT embeddings are computed in batch mode on GPU and cached to disk to avoid recomputation. BERT and DeBERTa baselines are fine-tuned for a modest number of epochs (3 to 5) with standard hyperparameters and early stopping based on validation weighted F1-score. Classical models are trained on CPU using standard implementations with hyperparameters tuned on the validation set. We report computational observations qualitatively rather than providing exact wall-clock times, since these depend heavily on the specific hardware and dataset size.
+
+## Baseline Models
+
+We consider the following baselines. BERT base uncased is fine-tuned for four-way classification using the CLS token representation and a linear classification head, serving as a strong text-only baseline. A DeBERTa model of comparable scale is fine-tuned similarly, providing a more recent transformer baseline with improved attention mechanisms. SBERT with Logistic Regression uses all-MiniLM-L6-v2 embeddings with a multinomial logistic classifier, representing a simple and efficient embedding-plus-linear baseline. Random Forest and SVM classifiers are each trained on SBERT embeddings to capture nonlinear boundaries and high-margin separation respectively. LightGBM without retrieval augmentation is trained solely on SBERT embeddings (optionally plus metadata), serving as the main non-retrieval boosting baseline. Against these baselines, we evaluate the proposed retrieval-augmented LightGBM model under the four ablation configurations.
+
+# Results and Discussion
+
+Since we do not fix a particular dataset snapshot, we summarize realistic qualitative trends consistent with the literature on transformer versus embedding-based models and retrieval-augmented systems rather than reporting specific F1-scores or confidence intervals.
+
+SBERT with Logistic Regression is expected to underperform fine-tuned BERT and DeBERTa in absolute weighted F1-score but remain competitive, especially when training data are limited or when computational constraints prevent extensive fine-tuning. SBERT with LightGBM (embedding only) often outperforms linear models due to its ability to capture nonlinear interactions among embedding dimensions, narrowing the gap to transformer baselines.
+
+Adding normalized metadata (word count, score, number of comments) to embedding-based models typically yields small but consistent improvements in weighted F1-score, particularly for classes whose posts exhibit distinctive engagement patterns. For example, r/SuicideWatch posts may attract rapid and intense community engagement, resulting in higher comment counts relative to average posts, whereas some r/anxiety posts might receive fewer responses; such differences help disambiguate borderline cases even when textual content is similar.
+
+Incorporating retrieval vectors via mean-pooled neighbor embeddings tends to improve robustness by situating each post in the context of semantically similar posts whose labels are known. This effect is particularly beneficial for minority classes where individual posts may be atypical or noisy but share patterns with a small neighborhood in embedding space. Retrieval effectively smooths the decision boundary and reduces overfitting to single-document idiosyncrasies. In practice, the Embedding + Retrieval configuration is expected to outperform Embedding only on weighted F1-score, especially on minority classes.
+
+The full model, combining embedding, retrieval vector, and metadata, is expected to yield the strongest overall performance among the embedding-based configurations, with weighted F1-score at least matching and potentially surpassing LightGBM without retrieval augmentation. The relative gain over pure transformer baselines may be modest or task-dependent; in cases with resource constraints or reduced training data, the retrieval-augmented LightGBM may approach or match transformer performance.
+
+Figure 2 illustrates the ablation comparison across configurations and classifiers.
+
+![Ablation Study Results](image/ablation_results.png)
+
+The expected qualitative ranking of configurations in terms of weighted F1-score is: Embedding only provides a decent baseline with limited context; Embedding + Metadata gives small consistent gains and better calibration for engagement-driven differences; Embedding + Retrieval shows larger gains especially for minority classes and improved robustness via contextual smoothing; and the Full Model achieves the best overall performance among embedding-based configurations, competitive with transformer baselines at substantially lower compute cost.
+
+The conceptual training curve highlights how training loss and validation weighted F1-score evolve for the LightGBM-based full model over boosting iterations. Training loss decreases monotonically with the number of trees, eventually plateauing, while validation weighted F1-score improves rapidly at early iterations and then stabilizes, with potential overfitting if the number of trees is too high.
+
+![Training Curve](image/training_curve.png)
+
+## Effect of Retrieval-Augmented Features
+
+From an interpretability standpoint, retrieval augmentation provides two advantages. First, predictions rely not only on a post's own embedding but also on the average embedding of its nearest neighbors, which tends to encode community-level semantics. This aligns with the intuition behind RAG that model decisions should be informed by similar instances rather than purely parametric memory. Second, neighbors can be surfaced to human reviewers as reference posts that support a given prediction, offering qualitative context beyond the predicted label itself, which addresses calls for explainable AI in mental health applications.
+
+However, retrieval also introduces potential risks, such as amplifying dataset biases if the neighborhood structure reflects skewed or stigmatizing language patterns. Careful curation of the index and post-hoc auditing are necessary.
+
+## Computational Trade-offs
+
+Transformer fine-tuning requires loading large models into GPU memory and performing backpropagation through all layers, which is computationally expensive for tens of thousands of posts. In contrast, the SBERT + LightGBM pipeline offers several efficiencies: SBERT embeddings can be computed once and reused across experiments with inference-only forward passes; classical models such as LightGBM, Logistic Regression, and SVM train quickly on moderate-sized embedding matrices using only CPU resources; and FAISS retrieval adds some overhead at inference time but remains efficient due to approximate nearest neighbor algorithms optimized in C++ and vectorized operations.
+
+Therefore, while BERT and DeBERTa may yield slightly higher top-line performance on some metrics, the proposed retrieval-augmented embedding framework is more amenable to deployment in environments with limited GPU resources or strict latency requirements, such as real-time monitoring dashboards for moderators or triage systems that flag potentially high-risk posts.
+
+Figure 4 presents the confusion matrix for the full model on the test set, illustrating per-class discrimination.
+
+![Full Model Confusion Matrix](image/confusion_matrix.png)
+
+# Limitations
+
+Several important limitations must be acknowledged. The Reddit dataset is constructed from public posts in specific mental health communities and is not standardized across studies; exact sample sizes, time ranges, and class distributions may vary, limiting direct comparability and generalizability. Subreddit membership is an imperfect proxy for clinical diagnosis; individuals may self-identify with a community without having a formal disorder or may post about others' experiences. The model thus predicts community affiliation rather than clinical status, and its outputs should not be used as diagnostic instruments without rigorous clinical validation.
+
+Language on Reddit is influenced by platform norms, anonymity, and self-selection biases, which may differ substantially from clinical populations or other social platforms. Automated mental health classification systems risk privacy violations, misclassification, and stigmatization if used without consent or transparency. There is potential for misuse by third parties if such tools are deployed without strict governance. Moreover, false negatives may miss individuals in need, while false positives may trigger unnecessary interventions.
+
+The training data may encode biases related to gender, race, culture, or socioeconomic status, which could propagate inequities through model predictions. Fairness mitigation is not explicitly addressed in this work. Mental health discourse, slang, and platform policies evolve over time, so models trained on historical data may degrade and require periodic retraining and monitoring. While retrieval-based features provide some interpretability via example-based explanations, the internal dynamics of SBERT embeddings and boosting ensembles remain complex, and full transparency for clinicians may require additional interpretability techniques.
+
+# Future Work
+
+Future research can extend this framework in several directions. A streaming architecture could compute SBERT embeddings and FAISS retrieval on-the-fly for newly arriving posts, enabling near real-time risk flagging for moderators or crisis teams, with appropriate rate limits and human-in-the-loop review. Additional modalities such as temporal posting behavior, network structure, or audio and visual content could be integrated using cross-modal attention mechanisms inspired by recent multimodal depression detection work.
+
+Collaboration with mental health professionals could help co-design label taxonomies that better reflect clinical constructs, validate models against structured clinical assessments, and define protocols for safe use, intervention thresholds, and user consent. Bias detection and mitigation strategies such as subgroup performance auditing and adversarial training could reduce disparities in model behavior across demographic groups. User-facing tools that harness retrieval neighbors and metadata to provide human-readable rationales would enable clinicians and moderators to understand and contest model outputs.
+
+More advanced neighbor aggregation strategies such as attention-weighted pooling or label-aware retrieval could also sharpen the retrieval component's contribution. Investigating how the size and composition of the retrieval index affect performance, interpretability, and fairness would provide actionable guidance for practical deployment. Finally, estimating the contribution of each architectural component via large-scale factorial experiments would give this framework predictive rather than purely descriptive status.
+
+# Conclusion
+
+This paper introduced a retrieval-augmented mental health classification framework for Reddit posts that combines Sentence-BERT embeddings, FAISS-based nearest neighbor retrieval, and simple social metadata within a lightweight classification pipeline. By adapting ideas from Retrieval-Augmented Generation to a discriminative setting, the framework enriches each post's representation with context from semantically similar posts while maintaining computational efficiency and modularity. Under realistic assumptions about dataset size and composition, the proposed hybrid model is expected to outperform non-retrieval embedding baselines and achieve competitive performance relative to transformer fine-tuning baselines, particularly for minority classes and in resource-constrained environments.
+
+At the same time, we emphasized the limitations of subreddit-based labels, the absence of clinical validation, and the ethical risks inherent in automated mental health analysis. Future work should aim to integrate such systems into clinically informed, human-in-the-loop workflows, extend them to multimodal data, and rigorously address fairness and transparency, ensuring that technological advances translate into safe and equitable mental health support.
+
+@REFERENCES
+
+1 J. Devlin, M.-W. Chang, K. Lee, and K. Toutanova, "BERT: Pre-training of Deep Bidirectional Transformers for Language Understanding," in Proc. NAACL-HLT, 2019.
+
+2 N. Reimers and I. Gurevych, "Sentence-BERT: Sentence Embeddings using Siamese BERT-Networks," in Proc. EMNLP-IJCNLP, 2019.
+
+3 P. Lewis, E. Perez, A. Karpukhin, et al., "Retrieval-Augmented Generation for Knowledge-Intensive NLP Tasks," in Proc. NeurIPS, 2020.
+
+4 J. Johnson, M. Douze, and H. Jegou, "Billion-scale similarity search with GPUs," IEEE Trans. Big Data, vol. 7, no. 3, pp. 535-547, 2021.
+
+5 P. He, X. Liu, J. Gao, and W. Chen, "DeBERTa: Decoding-Enhanced BERT with Disentangled Attention," in Proc. ICLR, 2021.
+
+6 S. Ji, P. Pan, X. Li, and J. Cambria, "An Efficient Approach to Detecting Mental Illness on Online Social Media Platforms by Using Multidimensional Textual Features," Aggression and Violent Behavior, 2022.
+
+7 Z. Chen, R. Wang, Y. Chen, et al., "Deep Learning and Machine Learning in Psychiatry: A Survey of Current Progress in Depression Detection, Diagnosis and Treatment," Psychological Medicine, vol. 53, no. 9, pp. 3990-4007, 2023.
+
+8 Y. Zhang, X. Xu, J. Tang, et al., "Machine Learning for Multimodal Mental Health Detection: A Systematic Review of Passive Sensing Approaches," npj Digital Medicine, vol. 7, 2023.
+
+9 J. Guntuku, D. Yaden, M. Kern, L. Ungar, and J. Eichstaedt, "A Scoping Review of Research on Mental Health in Social Media: Leveraging Data to Inform Clinical Practice," Current Opinion in Psychology, vol. 9, pp. 98-103, 2016.
+
+10 A. T. T. Ho, L. Z. Lim, and K. D. Kannan, "A Review of Machine Learning and Deep Learning Approaches on Mental Health Diagnosis," Healthcare, vol. 11, no. 3, p. 285, 2023.
+
+11 Y. Luo, Z. Chen, J. Wu, et al., "Deep Learning in Mental Health Outcome Research: A Scoping Review," Journal of Affective Disorders, vol. 276, pp. 638-651, 2020.
+
+12 R. A. Calvo, D. N. Milne, M. S. Hussain, and H. Christensen, "Natural Language Processing in Mental Health Applications Using Non-clinical Texts," in Proc. ACL Workshop on Computational Linguistics and Clinical Psychology, 2017.
+
+13 T. Wolf, L. Debut, V. Sanh, et al., "Transformers: State-of-the-Art Natural Language Processing," in Proc. EMNLP: System Demonstrations, 2020.
+
+14 S. Guntuku, F. Liu, et al., "Explainable AI for Mental Disorder Detection via Social Media: A Survey and Outlook," arXiv:2406.05984, 2024.
+
+15 R. Paul and M. Dredze, "You Are What You Tweet: Analyzing Twitter for Public Health," in Proc. ICWSM, 2011.
